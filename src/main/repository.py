@@ -1,4 +1,10 @@
+import logging
 from datetime import datetime
+
+from src.main.db_connection import SessionLocal
+from src.main.model import StudentEngagement
+from src.main.studentengageerror import DBError
+from src.main.validation import is_valid
 
 """from sqlalchemy import func
 
@@ -7,10 +13,11 @@ from src.model import StudentEngagement"""
 
 _mock_db = []
 
-
 """
 Mock Db call
 """
+
+
 def mock_upsert_student(record: dict):
     global _mock_db
     existing = next((item for item in _mock_db if item["student_id"] == record["student_id"]), None)
@@ -25,26 +32,36 @@ def mock_upsert_student(record: dict):
 
 """
 Real Db call
+"""
+
 
 def upsert_student(record: dict):
-    db = SessionLocal()
-    try:
-        existing = db.query(StudentEngagement).filter_by(student_id=record["student_id"]).first()
-        if existing:
-            for key, value in record.items():
-                setattr(existing, key, value)
-            existing.updated_at = datetime.utcnow()
-        else:
-            new_student = StudentEngagement(**record)
-            db.add(new_student)
+    if is_valid(record):
+        db = SessionLocal()
+        try:
+            existing = db.query(StudentEngagement).filter_by(student_id=record["student_id"]).first()
+            if existing:
+                for key, value in record.items():
+                    setattr(existing, key, value)
+                existing.updated_at = datetime.utcnow()
+            else:
+                new_student = StudentEngagement(**record)
+                db.add(new_student)
 
-        db.commit()
-    finally:
-        db.close()
-"""
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logging.error(f"Error connecting to db: {e}", exc_info=True)
+            raise DBError("SE-100", f"error updating student records")
+        finally:
+            db.close()
+
+
 """
 Mock db fetch call
 """
+
+
 def mock_get_summary():
     summary = {}
     for record in _mock_db:
@@ -61,6 +78,7 @@ def mock_get_summary():
             "avg_engagement_minutes": round(s["total"] / s["count"], 2)
         } for c, s in summary.items()
     ]
+
 
 """
 def get_summary():
